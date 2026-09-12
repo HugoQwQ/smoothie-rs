@@ -1,0 +1,81 @@
+name: Rust
+
+on:
+  push:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release-linux:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            libclang-dev \
+            llvm \
+            curl \
+            p7zip-full \
+            pkg-config \
+            python3 \
+            python3-pip
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Set LIBCLANG_PATH
+        shell: bash
+        run: |
+          LIBCLANG_PATH="$(dirname "$(find /usr/lib/llvm -name 'libclang.so' -print -quit)")"
+          echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> "$GITHUB_ENV"
+
+      - name: Setup VapourSynth
+        shell: bash
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install vapoursynth
+
+          python3 - <<'PY'
+          import vapoursynth
+          import os
+
+          print("VapourSynth:", vapoursynth.__file__)
+          print("Version:", vapoursynth.__api_version__)
+          PY
+
+      - name: Ship
+        shell: bash
+        run: |
+          chmod +x .github/workflows/shipper.sh
+          ./.github/workflows/shipper.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoothie-rs-bin-linux
+          path: ./smoothie-rs/
+
+      - name: Generate release tag
+        id: tag
+        shell: bash
+        run: |
+          echo "release_tag=Nightly_$(date +'%Y.%m.%d_%H-%M')" >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          fail_on_unmatched_files: true
+          files: |
+            ./smoothie-rs-nightly.tar.gz
